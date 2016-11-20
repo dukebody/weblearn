@@ -7,32 +7,58 @@ app = Flask(__name__)
 
 class AbstractModel(object):
     pipeline = None
+    fields = []
 
-    def form_to_array(self, values):
-        vars = values.split(',')
-        # raises ValueError if values are not floats
-        vars_float = [float(var) for var in vars]
-        return np.array(vars_float)
+    def extract_variables(self, input):
+        """
+        :param input: dict-like input
+        :return: list of variables values in the order they should be fed
+        to the model.
+        """
+        # a plain "values" field takes precedence
+        if 'values' in input.keys():
+            values = input.get('values')
+            return values.split(',')
+        # if that is not found, check that all needed fields are present
+        elif (field in input.keys() for field in self.fields):
+            return [input[field] for field in self.fields]
+
+    def form_to_array(self, input):
+        """
+        Transform form input to numpy array.
+
+        Raise ValueError if it fails.
+
+        :param input: dict-like input containing either a "values"
+        field or the fields specified in self.fields.
+        :return: 2d-array to be fed to a sklearn model.
+        """
+        vars = self.extract_variables(input)
+        if vars:
+            # raises ValueError if values are not floats
+            vars_float = [float(var) for var in vars]
+            return np.array(vars_float).reshape(1, -1)
+        # otherwise raise a ValueError
+        else:
+            raise ValueError(
+                'Required fields {} not found in input and "values" was not '
+                'found either.'.format(self.fields))
 
     def predict(self, x):
         return self.pipeline.predict(x)
 
-    def predict_view(self):
-        # post /predict/ values=0,1,2,1,0
-        # transform values into (1-n) numpy array --> x
-        values = request.form.get('values')
 
-        # fail if field not present
-        if values is None:
-            raise BadRequest('"values" field not present')
-
+def predict_view(model):
+    def func():
+        input = request.form
         try:
-            x = self.form_to_array(values)
+            x = model.form_to_array(input)
         except ValueError as error:
             raise BadRequest('Invalid input: {}.'.format(error))
 
         # perform prediction
-        prediction = self.predict(x)
+        prediction = model.predict(x)
 
         # return first element
         return str(prediction[0])
+    return func

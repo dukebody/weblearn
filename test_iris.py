@@ -28,3 +28,25 @@ def test_no_values(client):
 def test_values_nofloat(client):
     response = client.post('/iris/predict/', data={'values': '1a,2,3,4'})
     assert response.status_code == 400
+
+
+def test_named_values(client):
+    data = {
+        'sepal_length': 1,
+        'sepal_width': 2,
+        'petal_length': 3,
+        'petal_width': 4
+    }
+    response = client.post('/iris/predict/', data=data)
+    assert response.status_code == 200
+    assert response.data == b'2'
+
+
+def test_named_values_incomplete(client):
+    data = {
+        'sepal_length': 1,
+        'sepal_width': 2,
+        'petal_length': 3
+    }
+    response = client.post('/iris/predict/', data=data)
+    assert response.status_code == 400

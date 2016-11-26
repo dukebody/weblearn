@@ -2,57 +2,95 @@ import numpy as np
 from flask import Flask, request
 from werkzeug.exceptions import BadRequest
 
-app = Flask(__name__)
-
 
 class AbstractModel(object):
-    pipeline = None
-    fields = []
+    name = None  # override
+    pipeline = None  # override
 
-    def extract_variables(self, input):
+    def form_to_list(self, input):
         """
-        :param input: dict-like input
-        :return: list of variables values in the order they should be fed
-        to the model.
-        """
-        # a plain "values" field takes precedence
-        if 'values' in input.keys():
-            values = input.get('values')
-            return values.split(',')
-        # if that is not found, check that all needed fields are present
-        elif (field in input.keys() for field in self.fields):
-            return [input[field] for field in self.fields]
+        Transform given input dict into list of string variables.
 
-    def form_to_array(self, input):
+        :param input: dict-like input data
+        :return: list of string variables
+        """
+        raise NotImplementedError()
+
+    def to_array(self, vars):
+        """
+        Convert list of string variables into a 2d numpy array.
+
+        Raises ValueError if any of the variables cannot be
+        transformed into a float.
+
+        :param vars: list of string variables
+        :return: 2d numpy array to be fed to a sklearn model
+        """
+        # raises ValueError if values are not floats
+        vars_float = [float(var) for var in vars]
+        return np.array(vars_float).reshape(1, -1)
+
+    def parse_input(self, input):
         """
         Transform form input to numpy array.
 
-        Raise ValueError if it fails.
+        Raise ValueError upon failure.
 
-        :param input: dict-like input containing either a "values"
-        field or the fields specified in self.fields.
-        :return: 2d-array to be fed to a sklearn model.
+        :param input: dict-like input data
+        :return: 2d numpy array to be fed to a sklearn model.
         """
-        vars = self.extract_variables(input)
-        if vars:
-            # raises ValueError if values are not floats
-            vars_float = [float(var) for var in vars]
-            return np.array(vars_float).reshape(1, -1)
-        # otherwise raise a ValueError
-        else:
-            raise ValueError(
-                'Required fields {} not found in input and "values" was not '
-                'found either.'.format(self.fields))
+        vars = self.form_to_list(input)
+        return self.to_array(vars)
 
     def predict(self, x):
+        """
+        Return model prediction for given numpy array `x`
+
+        :param x: input numpy array
+        :return: prediction numpy array
+        """
         return self.pipeline.predict(x)
 
 
+class ValuesModel(AbstractModel):
+    """
+    Takes a single parameter "values" of comma-separeted input variables.
+    """
+    def form_to_list(self, input):
+        values = input.get('values')
+        if values is None:
+            raise ValueError('"values" variable not present in input')
+        values_split = values.split(',')
+        return [val.strip() for val in values_split]
+
+
+class KeyValueModel(AbstractModel):
+    """
+    Takes a list of key-value fields as input variables.
+
+    The ordered list of fields is defined in the 'fields' class attribute.
+    """
+    fields = []  # to be defined in subclasses
+
+    def form_to_list(self, input):
+        try:
+            return [input[field] for field in self.fields]
+        except KeyError as err:
+            raise ValueError(
+                'Variable not found in input: {}'.format(err.args[0]))
+
+
 def predict_view(model):
+    """
+    Create predict view for given model instance `model`.
+
+    :param model: an instance o a subclass of AbstractModel
+    :return: a view that returns model predictions
+    """
     def func():
         input = request.form
         try:
-            x = model.form_to_array(input)
+            x = model.parse_input(input)
         except ValueError as error:
             raise BadRequest('Invalid input: {}.'.format(error))
 
@@ -62,3 +100,18 @@ def predict_view(model):
         # return first element
         return str(prediction[0])
     return func
+
+
+def create_app(models):
+    """
+    Create a Flask app to serve models under /{model_id}/predict/ endpoints
+
+    :param models: AbstractModel models
+    :return: Flask app
+    """
+    app = Flask(__name__)
+    # register models
+    for model in models:
+        app.add_url_rule('/{}/predict/'.format(model.name), model.name,
+                         predict_view(model), methods=['POST'])
+    return app

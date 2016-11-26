@@ -6,6 +6,7 @@ from werkzeug.exceptions import BadRequest
 class AbstractModel(object):
     name = None  # override
     pipeline = None  # override
+    probability = False
 
     def form_to_list(self, input):
         """
@@ -51,6 +52,15 @@ class AbstractModel(object):
         """
         return self.pipeline.predict(x)
 
+    def predict_proba(self, x):
+        """
+        Return model probability prediction for given numpy array `x`
+
+        :param x: input numpy array
+        :return: prediction numpy array
+        """
+        return self.pipeline.predict_proba(x)
+
 
 class ValuesModel(AbstractModel):
     """
@@ -80,11 +90,13 @@ class KeyValueModel(AbstractModel):
                 'Variable not found in input: {}'.format(err.args[0]))
 
 
-def predict_view(model):
+def predict_view(model, predict_method='predict'):
     """
     Create predict view for given model instance `model`.
 
     :param model: an instance o a subclass of AbstractModel
+    :param predict_method: name of the method to invoke in the model to
+                           perform the prediction
     :return: a view that returns model predictions
     """
     def func():
@@ -95,16 +107,21 @@ def predict_view(model):
             raise BadRequest('Invalid input: {}.'.format(error))
 
         # perform prediction
-        prediction = model.predict(x)
+        predict = getattr(model, predict_method)
+        prediction = predict(x)
 
-        # return first element
-        return str(prediction[0])
+        if len(prediction.shape) == 1:  # single prediction
+            return str(prediction[0])
+        else:  # predicting multiple classes
+            probas = list(prediction[0])
+            return ','.join([str(proba) for proba in probas])
     return func
 
 
 def create_app(models):
     """
-    Create a Flask app to serve models under /{model_id}/predict/ endpoints
+    Create a Flask app to serve models under /{model_id}/predict/ and
+    (optionall) /{model_id}/predict_proba/ endpoints.
 
     :param models: AbstractModel models
     :return: Flask app
@@ -112,6 +129,13 @@ def create_app(models):
     app = Flask(__name__)
     # register models
     for model in models:
-        app.add_url_rule('/{}/predict/'.format(model.name), model.name,
+        app.add_url_rule('/{}/predict/'.format(model.name),
+                         '{}_predict'.format(model.name),
                          predict_view(model), methods=['POST'])
+        if model.probability:
+            app.add_url_rule(
+                '/{}/predict_proba/'.format(model.name),
+                '{}_predict_proba'.format(model.name),
+                predict_view(model, predict_method='predict_proba'),
+                methods=['POST'])
     return app

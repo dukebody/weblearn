@@ -10,5 +10,6 @@ y = iris.target
 
 # we create an instance of SVM and fit out data.
 C = 1.0  # SVM regularization parameter
-rbf_svc = svm.SVC(kernel='rbf', gamma=0.7, C=C).fit(X, y)
+rbf_svc = svm.SVC(kernel='rbf', gamma=0.7, C=C, probability=True)\
+          .fit(X, y)
 joblib.dump(rbf_svc, 'models/iris.pickle', compress=3)

@@ -24,12 +24,16 @@ The following class-level attributes must be defined:
  - `pipeline`: sklearn pipeline that accepts a 2d numpy array as input.
  - `fields`: If using a `KeyValueModel`, a list of names of the POST fields
    expected as input.
+ - `probability`: if `True`, allow a `/{model_id}/predict_proba/` endpoint
+   to return a comma-separated list of probabilities to belong to each of
+   the possible prediction classes. It is `False` by default.
 
 Example:
 
 ```python
 class IrisModel(KeyValueModel):
     name = 'iris'
+    probability = True
     pipeline = joblib.load('models/iris.pickle')
     fields = ['sepal_length', 'sepal_width', 'petal_length', 'petal_width']
 ```
@@ -45,9 +49,9 @@ app = create_app([IrisModel()])
 ```
 
 This will create a Flask app that serves the given model predictions under the
-`/iris/predict/ POST` endpoint. If the input data provided is invalid, it
-will return `400 Bad Response`. If it is valid, it will return the model
-prediction.
+`/iris/predict/` endpoint, and `/iris/predict_proba/` endpoints. If the input
+data provided is invalid, it will return `400 Bad Response`. If it is valid,
+it will return the model predictions.
 
 To serve this model, assuming you put your model in a `iris.py` file, run the
 following in your shell:

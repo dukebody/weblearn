@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 
-from base import AbstractModel, ValuesModel, KeyValueModel
+from base import AbstractModel, ValuesModel, KeyValueModel, Validator
 
 
 def aequal(a1, a2):
@@ -45,7 +45,7 @@ def test_vm_form_to_list_missing():
 
 # KeyValueModel
 class TestKeyValueModel(KeyValueModel):
-    fields = ['a', 'b']
+    schema = [{'name': 'a'}, {'name': 'b'}]
 
 
 def test_kvm_variables():
@@ -60,4 +60,57 @@ def test_kvm_variables_missing():
         kvm.form_to_list({'a': '1'})
 
 
+# Validator
+def test_schema_presence():
+    schema = [
+        {'name': 'john'},
+        {'name': 'lisa'}
+    ]
+    validator = Validator(schema)
+    assert validator.validate({'john': 's', 'lisa': 'f'})
+    assert not validator.validate({'john': 's'})
+    assert 'lisa' in validator.errors
 
+
+def test_schema_default():
+    schema = [
+        {'name': 'john', 'default': 'a'},
+    ]
+    validator = Validator(schema)
+    assert validator.validate({})
+    assert 'john' not in validator.errors
+    assert validator.cleaned_data == ['a']
+
+
+def test_schema_cleaned_data():
+    schema = [
+        {'name': 'john'},
+        {'name': 'lisa'}
+    ]
+    validator = Validator(schema)
+    validator.validate({'john': 's', 'lisa': 'f'})
+    assert validator.cleaned_data == ['s', 'f']
+
+    validator.validate({'john': 's'})
+    assert validator.cleaned_data is None
+
+
+def test_schema_transform():
+    schema = [
+        {'name': 'john', 'transform': int}
+    ]
+    validator = Validator(schema)
+    assert validator.validate({'john': '1'})
+    assert validator.cleaned_data == [1]
+
+
+def test_schema_transform_error():
+    def func(value):
+        raise Exception('Value could not be transformed')
+    schema = [
+        {'name': 'john', 'transform': func}
+    ]
+    validator = Validator(schema)
+    assert not validator.validate({'john': 'whatever'})
+    assert validator.cleaned_data is None
+    assert 'john' in validator.errors

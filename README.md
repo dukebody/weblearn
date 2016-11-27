@@ -18,11 +18,11 @@ There are two base classes for models:
    inputs as comma separated values. Like `values=1,3,7.2`.
  - `KeyValueModel`: Expects a list of key-value fields as input.
 
-The following class-level attributes must be defined:
+The following class-level attributes can be defined:
 
  - `name`: Id of the model to be used in the API endpoint.
  - `pipeline`: sklearn pipeline that accepts a 2d numpy array as input.
- - `fields`: If using a `KeyValueModel`, a list of names of the POST fields
+ - `schema`: If using a `KeyValueModel`, a schema defining the POST fields
    expected as input.
  - `probability`: if `True`, allow a `/{model_id}/predict_proba/` endpoint
    to return a comma-separated list of probabilities to belong to each of
@@ -35,11 +35,16 @@ class IrisModel(KeyValueModel):
     name = 'iris'
     probability = True
     pipeline = joblib.load('models/iris.pickle')
-    fields = ['sepal_length', 'sepal_width', 'petal_length', 'petal_width']
+    schema = [
+        {'name': 'sepal_length'},
+        {'name': 'sepal_width'},
+        {'name': 'petal_length'},
+        {'name': 'petal_width'}
+    ]
 ```
 
 In this case, we are creating a model based on the pipeline loaded from a file,
-with the name `iris` that takes four numeric inputs.
+with the name `iris` that takes four inputs.
 
 To serve this model, use the `create_app` function, accepting a list of
 model instances:
@@ -60,7 +65,22 @@ following in your shell:
 FLASK_APP=iris.py flask run
 ```
 
+# Validation and transformation
+
+When using the `KeyValueModel`, the input is validated against a given schema
+definition. The schema is specified as a simple dictionary and it is based on
+the `Cerberus` validation library.
+
+It takes the following parameters:
+
+ - 'name': field name to get from the input
+ - 'default': if present, will be used when no value is provided. Otherwise
+   `ValueError` will be raised in this case.
+ - `transform`: callable accepting a single argument to transform the provided value
+
+
 # Features roadmap
 
- - Input validation
- - Input transformations
+ - Field validation failure return list of errors in 400 Response.
+ - Doctests.
+ - Travis.

@@ -3,6 +3,65 @@ from flask import Flask, request
 from werkzeug.exceptions import BadRequest
 
 
+class Validator(object):
+    def __init__(self, schema):
+        self.schema = schema
+
+    def clean_field(self, field, value):
+        """
+        Transform the given value using the field definition.
+
+        The field definition is of the form:
+        {
+            'name': field name,
+            'default': if present, will be used when no value is provided
+                       otherwise ValueError will be raised in this case
+            'transform': function accepting a single argument to transform
+                         the provided value
+        }
+
+        Raise `ValueError` with informative message if there were errors
+        cleaning the field.
+        """
+        if value is None:
+            if not 'default' in field:
+                raise ValueError('Field value missing and no default set')
+            else:
+                value = field['default']
+        if 'transform' in field:
+            try:
+                value = field['transform'](value)
+            except Exception as err:
+                raise ValueError(
+                    'Error while transforming: {}'.format(str(err.args)))
+        return value
+
+    def validate(self, data):
+        """
+        Validate and clean the given data.
+
+        If there were errors, return False. The 'errors' dict will contain
+        a description of the errors found and 'cleaned_data' will be `None`.
+
+        Otherwise, return `True`. The attribute `cleaned_data` will contain
+        a list with the cleaned values of all given fields.
+        """
+        self.errors = {}
+        self.cleaned_data = []
+        for field in self.schema:
+            name = field['name']
+            value = data.get(name)
+            try:
+                cleaned_value = self.clean_field(field, value)
+                self.cleaned_data.append(cleaned_value)
+            except ValueError as error:
+                self.errors[name] = error
+        if self.errors:
+            self.cleaned_data = None
+            return False
+        return True
+
+
 class AbstractModel(object):
     name = None  # override
     pipeline = None  # override
@@ -80,14 +139,15 @@ class KeyValueModel(AbstractModel):
 
     The ordered list of fields is defined in the 'fields' class attribute.
     """
-    fields = []  # to be defined in subclasses
+    schema = []  # to be defined in subclasses
 
     def form_to_list(self, input):
-        try:
-            return [input[field] for field in self.fields]
-        except KeyError as err:
-            raise ValueError(
-                'Variable not found in input: {}'.format(err.args[0]))
+        validator = Validator(self.schema)
+        is_valid = validator.validate(input)
+        if not is_valid:
+            raise ValueError(validator.errors)
+        else:
+            return validator.cleaned_data
 
 
 def predict_view(model, predict_method='predict'):
@@ -112,7 +172,7 @@ def predict_view(model, predict_method='predict'):
 
         if len(prediction.shape) == 1:  # single prediction
             return str(prediction[0])
-        else:  # predicting multiple classes
+        else:  # predicting multiple class'es
             probas = list(prediction[0])
             return ','.join([str(proba) for proba in probas])
     return func
